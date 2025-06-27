@@ -7,14 +7,30 @@ import {
   Upload,
   FileText,
   Download,
-  Printer,
   Moon,
   Sun,
   Menu,
   X,
   Share2,
 } from "lucide-react";
-import "./App.css";
+
+// Add Tailwind CSS if not already included
+if (!document.querySelector('link[href*="tailwind"]')) {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href =
+    "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css";
+  document.head.appendChild(link);
+}
+
+// Add Google Fonts if not already included
+if (!document.querySelector('link[href*="fonts.googleapis.com"]')) {
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap";
+  document.head.appendChild(link);
+}
 
 // Utility CSS for hiding scrollbars and disabling selection
 const hideScrollbarStyle = {
@@ -49,39 +65,10 @@ const DynamicBMCCanvas = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [buttonsExpanded, setButtonsExpanded] = useState(true);
+  const [canvasHasContent, setCanvasHasContent] = useState(false);
 
-  // Listen for window resize to update mobile state
-  useEffect(() => {
-    const handleResize = () => {
-      const wasMobile = isMobile;
-      const nowMobile = window.innerWidth <= 768;
-      setIsMobile(nowMobile);
-
-      if (!wasMobile && nowMobile) {
-        // Switching to mobile - adjust transform for mobile viewing
-        setMobileMenuOpen(false);
-        // Set a mobile-friendly default transform
-        setTransform({ x: 20, y: 20, scale: 0.4 });
-      } else if (wasMobile && !nowMobile) {
-        // Switching to desktop - reset to desktop transform
-        setMobileMenuOpen(false);
-        setTransform({ x: 50, y: 50, scale: 0.8 });
-      }
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [isMobile]);
-
-  // Toast notification system
-  const showToastMessage = (message) => {
-    setToastMessage(message);
-    setShowToast(true);
-    setTimeout(() => {
-      setShowToast(false);
-    }, 3000);
-  };
-
-  // Standard BMC layout - defined early to avoid reference errors
+  // Standard BMC layout
   const bmcSections = [
     {
       key: "keyPartners",
@@ -187,6 +174,47 @@ const DynamicBMCCanvas = () => {
 - Fixed vs variable costs
 - Cost optimization strategies`;
 
+  // Listen for window resize to update mobile state
+  useEffect(() => {
+    const handleResize = () => {
+      const wasMobile = isMobile;
+      const nowMobile = window.innerWidth <= 768;
+      setIsMobile(nowMobile);
+
+      if (!wasMobile && nowMobile) {
+        // Switching to mobile - adjust transform for mobile viewing
+        setMobileMenuOpen(false);
+        setTransform({ x: 20, y: 20, scale: 0.4 });
+      } else if (wasMobile && !nowMobile) {
+        // Switching to desktop - reset to desktop transform
+        setMobileMenuOpen(false);
+        setTransform({ x: 50, y: 50, scale: 0.8 });
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [isMobile]);
+
+  // Toast notification system
+  const showToastMessage = (message) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => {
+      setShowToast(false);
+    }, 3000);
+  };
+
+  // Simple predictable button state management
+  const handleCanvasInteraction = useCallback(() => {
+    if (canvasHasContent) {
+      setButtonsExpanded(false); // Shrink when canvas is moved
+    }
+  }, [canvasHasContent]);
+
+  const handleButtonTouch = useCallback(() => {
+    setButtonsExpanded(true); // Expand when button is touched
+  }, []);
+
   // Download template function
   const downloadTemplate = useCallback(() => {
     const blob = new Blob([templateContent], { type: "text/markdown" });
@@ -204,18 +232,15 @@ const DynamicBMCCanvas = () => {
   const calculateContentDimensions = useCallback(() => {
     if (!bmcData) return { width: 1480, height: 800 };
 
-    // Calculate content-based column widths
     const sections = bmcSections.map((section) => {
       const data = bmcData[section.key];
       if (!data) return { ...section, contentWidth: 250 };
 
-      // Estimate width based on content length
       const maxLineLength = Math.max(
         data.title?.length || 0,
         ...data.content.map((item) => item.length)
       );
 
-      // Base width + extra for longer content
       const contentWidth = Math.max(
         250,
         Math.min(400, 200 + maxLineLength * 3)
@@ -224,7 +249,6 @@ const DynamicBMCCanvas = () => {
       return { ...section, contentWidth };
     });
 
-    // Calculate grid dimensions
     const col1Width = Math.max(
       sections.find((s) => s.gridArea === "partners")?.contentWidth || 250
     );
@@ -244,12 +268,12 @@ const DynamicBMCCanvas = () => {
     );
 
     const totalWidth =
-      col1Width + col2Width + col3Width + col4Width + col5Width + 4 * 24; // 4 gaps
+      col1Width + col2Width + col3Width + col4Width + col5Width + 4 * 24;
     const gridTemplate = `${col1Width}px ${col2Width}px ${col3Width}px ${col4Width}px ${col5Width}px`;
 
     return {
       width: totalWidth,
-      height: 800, // Will adjust based on content height too
+      height: 800,
       gridTemplate,
       columnWidths: [col1Width, col2Width, col3Width, col4Width, col5Width],
     };
@@ -260,7 +284,7 @@ const DynamicBMCCanvas = () => {
     setIsDarkMode(!isDarkMode);
   };
 
-  // Improved markdown parser with better section mapping
+  // Improved markdown parser
   const parseMarkdownToBMC = useCallback((content) => {
     const sections = {};
     const lines = content.split("\n");
@@ -268,66 +292,49 @@ const DynamicBMCCanvas = () => {
     let currentContent = [];
     let title = "";
 
-    // Extract title from first line
     const firstLine = lines[0]?.trim();
     if (firstLine && firstLine.startsWith("#")) {
       title = firstLine.replace(/^#+\s*/, "").trim();
     }
 
-    // Enhanced section mappings with multiple variations
     const sectionMappings = {
-      // Customer Segments variations
       "customer segments": "customerSegments",
       customersegments: "customerSegments",
       "target customers": "customerSegments",
       "target market": "customerSegments",
       "market segments": "customerSegments",
-
-      // Value Propositions variations
       "value propositions": "valuePropositions",
       valuepropositions: "valuePropositions",
       "value proposition": "valuePropositions",
       "unique value": "valuePropositions",
       benefits: "valuePropositions",
-
-      // Channels variations
       channels: "channels",
       "distribution channels": "channels",
       "sales channels": "channels",
       "marketing channels": "channels",
       "reach customers": "channels",
-
-      // Customer Relationships variations
       "customer relationships": "customerRelationships",
       customerrelationships: "customerRelationships",
       "customer relations": "customerRelationships",
       "relationship types": "customerRelationships",
       "customer interaction": "customerRelationships",
-
-      // Revenue Streams variations
       "revenue streams": "revenueStreams",
       revenuestreams: "revenueStreams",
       "revenue sources": "revenueStreams",
       "income streams": "revenueStreams",
       monetization: "revenueStreams",
       pricing: "revenueStreams",
-
-      // Key Activities variations
       "key activities": "keyActivities",
       keyactivities: "keyActivities",
       "core activities": "keyActivities",
       "main activities": "keyActivities",
       "business activities": "keyActivities",
-
-      // Key Resources variations
       "key resources": "keyResources",
       keyresources: "keyResources",
       "core resources": "keyResources",
       "main resources": "keyResources",
       "essential resources": "keyResources",
       assets: "keyResources",
-
-      // Key Partnerships variations
       "key partnerships": "keyPartners",
       keypartnerships: "keyPartners",
       "key partners": "keyPartners",
@@ -336,8 +343,6 @@ const DynamicBMCCanvas = () => {
       partners: "keyPartners",
       "strategic alliances": "keyPartners",
       alliances: "keyPartners",
-
-      // Cost Structure variations
       "cost structure": "costStructure",
       coststructure: "costStructure",
       costs: "costStructure",
@@ -353,7 +358,6 @@ const DynamicBMCCanvas = () => {
 
       const headerMatch = line.match(/^#+\s*(.+?)(?:\s*[🎯👥📡🤝💰🏃‍♂️🛠️💸])?$/);
       if (headerMatch) {
-        // Save previous section with original title
         if (currentSection && currentContent.length > 0) {
           sections[currentSection.key] = {
             title: currentSection.originalTitle,
@@ -361,20 +365,17 @@ const DynamicBMCCanvas = () => {
           };
         }
 
-        // Clean and normalize the section text for mapping
         const originalTitle = headerMatch[1].replace(/^\d+\.\s*/, "").trim();
         const normalizedText = originalTitle
           .toLowerCase()
-          .replace(/[^\w\s]/g, "") // Remove special characters
-          .replace(/\s+/g, " ") // Normalize spaces
+          .replace(/[^\w\s]/g, "")
+          .replace(/\s+/g, " ")
           .trim();
 
-        // Try exact match first, then try without spaces
         let mappedKey =
           sectionMappings[normalizedText] ||
           sectionMappings[normalizedText.replace(/\s/g, "")];
 
-        // If no direct match, try partial matching
         if (!mappedKey) {
           for (const [key, value] of Object.entries(sectionMappings)) {
             if (normalizedText.includes(key) || key.includes(normalizedText)) {
@@ -384,7 +385,6 @@ const DynamicBMCCanvas = () => {
           }
         }
 
-        // Fallback: use cleaned original text as key
         if (!mappedKey) {
           mappedKey = normalizedText.replace(/\s+/g, "").replace(/^\d+/, "");
         }
@@ -407,18 +407,12 @@ const DynamicBMCCanvas = () => {
       }
     }
 
-    // Save last section
     if (currentSection && currentContent.length > 0) {
       sections[currentSection.key] = {
         title: currentSection.originalTitle,
         content: currentContent.filter((item) => item.trim()),
       };
     }
-
-    console.log(
-      "Parsed sections with titles:",
-      Object.keys(sections).map((key) => ({ key, title: sections[key].title }))
-    );
 
     return { sections, title };
   }, []);
@@ -440,14 +434,15 @@ const DynamicBMCCanvas = () => {
           setBmcTitle(title);
           setFileName(file.name);
 
-          // Set appropriate initial transform based on screen size
           if (isMobile) {
             setTransform({ x: 20, y: 20, scale: 0.4 });
           } else {
             setTransform({ x: 50, y: 50, scale: 0.8 });
           }
 
-          setMobileMenuOpen(false); // Close menu after upload
+          setCanvasHasContent(true);
+          setButtonsExpanded(false);
+          setMobileMenuOpen(false);
           showToastMessage("📄 BMC file loaded successfully!");
         };
         reader.readAsText(file);
@@ -458,138 +453,125 @@ const DynamicBMCCanvas = () => {
     [parseMarkdownToBMC, isMobile]
   );
 
-  // Print BMC function
-  const printBMC = useCallback(() => {
-    if (!bmcContentRef.current) return;
+  // Touch handlers with pinch zoom support
+  const touchState = useRef({
+    x: 0,
+    y: 0,
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    transformAtStart: { x: 0, y: 0, scale: 1 },
+    isPinching: false,
+    initialDistance: 0,
+    initialScale: 1,
+    lastCenter: { x: 0, y: 0 },
+  });
 
-    // Create a new window for printing
-    const printWindow = window.open("", "_blank");
-    const bmcContent = bmcContentRef.current.outerHTML;
+  const getTouchDistance = (touch1, touch2) => {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
 
-    // Get Montserrat font and styles
-    const printHTML = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${bmcTitle || "Business Model Canvas"}</title>
-          <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-          <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Montserrat', sans-serif;
-              background: white;
-              padding: 0;
-              margin: 0;
-            }
-            .print-container {
-              width: 100vw;
-              height: 100vh;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 20px;
-            }
-            .bmc-content {
-              transform: scale(1) !important;
-              transform-origin: center center;
-              max-width: 100%;
-              max-height: 100%;
-            }
-            @media print {
-              .print-container {
-                width: 100%;
-                height: 100%;
-                padding: 0;
-              }
-              .bmc-content {
-                page-break-inside: avoid;
-                transform: scale(0.8) !important;
-              }
-            }
-            /* Copy Tailwind classes for print */
-            .bg-white { background-color: white; }
-            .bg-gray-50 { background-color: #f9fafb; }
-            .bg-gray-100 { background-color: #f3f4f6; }
-            .bg-gray-700 { background-color: #374151; }
-            .bg-gray-800 { background-color: #1f2937; }
-            .border-gray-300 { border-color: #d1d5db; }
-            .border-gray-600 { border-color: #4b5563; }
-            .text-gray-100 { color: #f3f4f6; }
-            .text-gray-200 { color: #e5e7eb; }
-            .text-gray-300 { color: #d1d5db; }
-            .text-gray-600 { color: #4b5563; }
-            .text-gray-700 { color: #374151; }
-            .text-gray-800 { color: #1f2937; }
-            .text-gray-900 { color: #111827; }
-            .rounded-xl { border-radius: 0.75rem; }
-            .border-2 { border-width: 2px; }
-            .shadow-xl { box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 10px 10px -5px rgb(0 0 0 / 0.04); }
-            .shadow-lg { box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -2px rgb(0 0 0 / 0.05); }
-            .overflow-hidden { overflow: hidden; }
-            .text-center { text-align: center; }
-            .text-3xl { font-size: 1.875rem; line-height: 2.25rem; }
-            .text-base { font-size: 1rem; line-height: 1.5rem; }
-            .text-sm { font-size: 0.875rem; line-height: 1.25rem; }
-            .font-bold { font-weight: 700; }
-            .uppercase { text-transform: uppercase; }
-            .tracking-wide { letter-spacing: 0.025em; }
-            .py-8 { padding-top: 2rem; padding-bottom: 2rem; }
-            .p-8 { padding: 2rem; }
-            .p-4 { padding: 1rem; }
-            .p-5 { padding: 1.25rem; }
-            .mb-2 { margin-bottom: 0.5rem; }
-            .border-b-2 { border-bottom-width: 2px; }
-            .border-b { border-bottom-width: 1px; }
-            .border-l-4 { border-left-width: 4px; }
-            .pl-4 { padding-left: 1rem; }
-            .mt-2 { margin-top: 0.5rem; }
-            .flex { display: flex; }
-            .flex-col { flex-direction: column; }
-            .flex-1 { flex: 1 1 0%; }
-            .items-start { align-items: flex-start; }
-            .space-x-3 > * + * { margin-left: 0.75rem; }
-            .space-y-2 > * + * { margin-top: 0.5rem; }
-            .space-y-4 > * + * { margin-top: 1rem; }
-            .leading-relaxed { line-height: 1.625; }
-            .min-h-0 { min-height: 0px; }
-            .w-2 { width: 0.5rem; }
-            .h-2 { height: 0.5rem; }
-            .rounded-full { border-radius: 9999px; }
-            .flex-shrink-0 { flex-shrink: 0; }
-            .grid { display: grid; }
-            .gap-6 { gap: 1.5rem; }
-          </style>
-        </head>
-        <body>
-          <div class="print-container">
-            <div class="bmc-content">
-              ${bmcContent}
-            </div>
-          </div>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.write(printHTML);
-    printWindow.document.close();
-
-    // Wait for content to load, then print
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 500);
+  const getTouchCenter = (touch1, touch2) => {
+    return {
+      x: (touch1.clientX + touch2.clientX) / 2,
+      y: (touch1.clientY + touch2.clientY) / 2,
     };
-  }, [bmcTitle]);
+  };
 
-  // --- Mouse and touch handlers for PAN mode ---
+  const handleTouchStart = useCallback(
+    (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        touchState.current.dragging = true;
+        touchState.current.isPinching = false;
+        touchState.current.startX = touch.clientX;
+        touchState.current.startY = touch.clientY;
+        touchState.current.transformAtStart = { ...transform };
+      } else if (e.touches.length === 2) {
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+
+        touchState.current.dragging = false;
+        touchState.current.isPinching = true;
+        touchState.current.initialDistance = getTouchDistance(touch1, touch2);
+        touchState.current.initialScale = transform.scale;
+        touchState.current.lastCenter = getTouchCenter(touch1, touch2);
+        touchState.current.transformAtStart = { ...transform };
+      }
+
+      e.preventDefault();
+    },
+    [transform]
+  );
+
+  const handleTouchMove = useCallback(
+    (e) => {
+      if (
+        e.touches.length === 1 &&
+        touchState.current.dragging &&
+        !touchState.current.isPinching
+      ) {
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - touchState.current.startX;
+        const deltaY = touch.clientY - touchState.current.startY;
+
+        handleCanvasInteraction();
+
+        setTransform({
+          ...touchState.current.transformAtStart,
+          x: touchState.current.transformAtStart.x + deltaX,
+          y: touchState.current.transformAtStart.y + deltaY,
+        });
+      } else if (e.touches.length === 2 && touchState.current.isPinching) {
+        const touch1 = e.touches[0];
+        const touch2 = e.touches[1];
+
+        handleCanvasInteraction();
+
+        const currentDistance = getTouchDistance(touch1, touch2);
+        const currentCenter = getTouchCenter(touch1, touch2);
+
+        const scaleChange =
+          currentDistance / touchState.current.initialDistance;
+        let newScale = touchState.current.initialScale * scaleChange;
+
+        newScale = Math.max(0.1, Math.min(3, newScale));
+
+        const rect = canvasRef.current.getBoundingClientRect();
+        const centerX = currentCenter.x - rect.left;
+        const centerY = currentCenter.y - rect.top;
+
+        const scaleRatio = newScale / touchState.current.transformAtStart.scale;
+        const newX =
+          centerX -
+          (centerX - touchState.current.transformAtStart.x) * scaleRatio;
+        const newY =
+          centerY -
+          (centerY - touchState.current.transformAtStart.y) * scaleRatio;
+
+        setTransform({
+          x: newX,
+          y: newY,
+          scale: newScale,
+        });
+      }
+
+      e.preventDefault();
+    },
+    [handleCanvasInteraction]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    touchState.current.dragging = false;
+    touchState.current.isPinching = false;
+  }, []);
+
+  // Mouse handlers
   const handleMouseDown = useCallback(
     (e) => {
-      if (e.button !== 0) return; // Only left click
+      if (e.button !== 0) return;
       setIsDragging(true);
       setDragStart({
         x: e.clientX - transform.x,
@@ -602,6 +584,7 @@ const DynamicBMCCanvas = () => {
   const handleMouseMove = useCallback(
     (e) => {
       if (isDragging) {
+        handleCanvasInteraction();
         setTransform((prev) => ({
           ...prev,
           x: e.clientX - dragStart.x,
@@ -609,90 +592,45 @@ const DynamicBMCCanvas = () => {
         }));
       }
     },
-    [isDragging, dragStart]
+    [isDragging, dragStart, handleCanvasInteraction]
   );
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
   }, []);
 
-  // --- Touch handlers for mobile pan - FIXED VERSION ---
-  const touchState = useRef({
-    x: 0,
-    y: 0,
-    dragging: false,
-    startX: 0,
-    startY: 0,
-    transformAtStart: { x: 0, y: 0, scale: 1 },
-  });
-
-  const handleTouchStart = useCallback(
+  const handleWheel = useCallback(
     (e) => {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        touchState.current.dragging = true;
-        touchState.current.startX = touch.clientX;
-        touchState.current.startY = touch.clientY;
-        touchState.current.transformAtStart = { ...transform };
+      e.preventDefault();
+      handleCanvasInteraction();
 
-        // Prevent default to avoid scrolling
-        e.preventDefault();
-      }
+      const ZOOM_FACTOR = 0.03;
+      const delta = e.deltaY * ZOOM_FACTOR;
+      const scaleMultiplier = 1 - delta;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      setTransform((prev) => {
+        let newScale = prev.scale * scaleMultiplier;
+        newScale = Math.max(0.2, Math.min(2, newScale));
+        const scaleChange = newScale / prev.scale;
+        return {
+          x: mouseX - (mouseX - prev.x) * scaleChange,
+          y: mouseY - (mouseY - prev.y) * scaleChange,
+          scale: newScale,
+        };
+      });
     },
-    [transform]
+    [handleCanvasInteraction]
   );
 
-  const handleTouchMove = useCallback((e) => {
-    if (touchState.current.dragging && e.touches.length === 1) {
-      const touch = e.touches[0];
-      const deltaX = touch.clientX - touchState.current.startX;
-      const deltaY = touch.clientY - touchState.current.startY;
-
-      setTransform({
-        ...touchState.current.transformAtStart,
-        x: touchState.current.transformAtStart.x + deltaX,
-        y: touchState.current.transformAtStart.y + deltaY,
-      });
-
-      // Prevent default to avoid scrolling
-      e.preventDefault();
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    touchState.current.dragging = false;
-  }, []);
-
-  // --- Zoom sensitivity reduced ---
-  const handleWheel = useCallback((e) => {
-    e.preventDefault();
-    // Reduce zoom factor for smoother experience
-    const ZOOM_FACTOR = 0.03; // Lower = less sensitive
-    const delta = e.deltaY * ZOOM_FACTOR;
-    const scaleMultiplier = 1 - delta;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    setTransform((prev) => {
-      let newScale = prev.scale * scaleMultiplier;
-      newScale = Math.max(0.2, Math.min(2, newScale));
-      const scaleChange = newScale / prev.scale;
-      return {
-        x: mouseX - (mouseX - prev.x) * scaleChange,
-        y: mouseY - (mouseY - prev.y) * scaleChange,
-        scale: newScale,
-      };
-    });
-  }, []);
-
-  // --- Zoom in/out buttons: less aggressive ---
   const zoomIn = () => {
     const container = canvasRef.current;
     const rect = container.getBoundingClientRect();
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
     setTransform((prev) => {
-      const newScale = Math.min(2, prev.scale * 1.07); // smaller step
+      const newScale = Math.min(2, prev.scale * 1.07);
       const scaleChange = newScale / prev.scale;
       return {
         x: centerX - (centerX - prev.x) * scaleChange,
@@ -701,13 +639,14 @@ const DynamicBMCCanvas = () => {
       };
     });
   };
+
   const zoomOut = () => {
     const container = canvasRef.current;
     const rect = container.getBoundingClientRect();
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
     setTransform((prev) => {
-      const newScale = Math.max(0.2, prev.scale / 1.07); // smaller step
+      const newScale = Math.max(0.2, prev.scale / 1.07);
       const scaleChange = newScale / prev.scale;
       return {
         x: centerX - (centerX - prev.x) * scaleChange,
@@ -722,22 +661,17 @@ const DynamicBMCCanvas = () => {
     const bmcContent = bmcContentRef.current;
     if (!container || !bmcContent) return;
 
-    // Get visible area of the canvas
     const containerRect = container.getBoundingClientRect();
-    // Get actual BMC content size
     const bmcRect = bmcContent.getBoundingClientRect();
 
-    // Adjust padding based on screen size
     const padding = isMobile ? 20 : 40;
     const availableWidth = containerRect.width - padding * 2;
     const availableHeight = containerRect.height - padding * 2;
 
-    // Use actual content size for scaling
     const scaleX = availableWidth / bmcRect.width;
     const scaleY = availableHeight / bmcRect.height;
     const scale = Math.min(scaleX, scaleY, 1);
 
-    // Center the BMC content
     const x = (containerRect.width - bmcRect.width * scale) / 2;
     const y = (containerRect.height - bmcRect.height * scale) / 2;
 
@@ -763,7 +697,6 @@ const DynamicBMCCanvas = () => {
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
-    // Touch events
     canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
     canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
     canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
@@ -784,7 +717,7 @@ const DynamicBMCCanvas = () => {
     handleTouchEnd,
   ]);
 
-  // --- Load BMC from URL param on mount ---
+  // Load BMC from URL param on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const dataParam = params.get("data");
@@ -795,7 +728,6 @@ const DynamicBMCCanvas = () => {
         try {
           fileObj = JSON.parse(decoded);
         } catch {
-          // fallback for old links: treat as plain markdown
           fileObj = { filename: "Shared BMC", content: decoded };
         }
         setRawMarkdown(fileObj.content);
@@ -806,14 +738,15 @@ const DynamicBMCCanvas = () => {
         setBmcTitle(title);
         setFileName(fileObj.filename || "Shared BMC");
 
-        // Set appropriate initial transform based on screen size
         if (isMobile) {
           setTransform({ x: 20, y: 20, scale: 0.4 });
         } else {
           setTransform({ x: 50, y: 50, scale: 0.8 });
         }
 
-        // Clean URL after loading data
+        setCanvasHasContent(true);
+        setButtonsExpanded(false);
+
         window.history.replaceState(
           {},
           document.title,
@@ -826,12 +759,11 @@ const DynamicBMCCanvas = () => {
     }
   }, [parseMarkdownToBMC, isMobile]);
 
-  // --- Share button handler ---
+  // Share button handler
   const handleShare = () => {
     let markdown = rawMarkdown;
     let filename = fileName || "Shared BMC";
     if (!markdown && bmcData) {
-      // Try to reconstruct markdown from bmcData
       markdown = Object.values(bmcData)
         .map(
           (section) =>
@@ -848,7 +780,6 @@ const DynamicBMCCanvas = () => {
     const url = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
     setShareLink(url);
 
-    // Copy to clipboard and show toast
     navigator.clipboard
       .writeText(url)
       .then(() => {
@@ -858,7 +789,8 @@ const DynamicBMCCanvas = () => {
         showToastMessage("❌ Failed to copy link to clipboard");
       });
 
-    setMobileMenuOpen(false); // Close menu after sharing
+    setButtonsExpanded(true);
+    setMobileMenuOpen(false);
   };
 
   // Close mobile menu when clicking outside
@@ -868,7 +800,8 @@ const DynamicBMCCanvas = () => {
         isMobile &&
         mobileMenuOpen &&
         !e.target.closest(".mobile-menu") &&
-        !e.target.closest(".mobile-menu-button")
+        !e.target.closest(".mobile-menu-button") &&
+        !e.target.closest(".floating-button")
       ) {
         setMobileMenuOpen(false);
       }
@@ -979,208 +912,271 @@ const DynamicBMCCanvas = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40" />
       )}
 
-      {/* Mobile Floating Menu */}
+      {/* Mobile Floating Buttons */}
       {isMobile && (
+        <div className="fixed top-4 left-4 z-50 flex space-x-3">
+          {/* Hamburger Menu Button */}
+          <button
+            className={`floating-button mobile-menu-button transition-all duration-300 ${
+              isDarkMode
+                ? "bg-gray-800 border-gray-700"
+                : "bg-white border-gray-200"
+            } rounded-full shadow-lg border focus:outline-none ${
+              buttonsExpanded ? "w-12 h-12" : "w-7 h-7"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleButtonTouch();
+              setMobileMenuOpen(!mobileMenuOpen);
+            }}
+            aria-label="Toggle menu"
+          >
+            <div className="w-full h-full flex items-center justify-center">
+              {mobileMenuOpen ? (
+                <X
+                  className={`transition-all duration-200 ${
+                    buttonsExpanded ? "w-6 h-6" : "w-4 h-4"
+                  } ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}
+                />
+              ) : (
+                <Menu
+                  className={`transition-all duration-200 ${
+                    buttonsExpanded ? "w-6 h-6" : "w-4 h-4"
+                  } ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}
+                />
+              )}
+            </div>
+          </button>
+
+          {/* Share Button */}
+          <button
+            className={`floating-button transition-all duration-300 ${
+              isDarkMode
+                ? "bg-purple-800 hover:bg-purple-700 border-purple-700"
+                : "bg-purple-600 hover:bg-purple-700 border-purple-500"
+            } rounded-full shadow-lg border focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${
+              buttonsExpanded ? "w-12 h-12" : "w-7 h-7"
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleButtonTouch();
+              handleShare();
+            }}
+            disabled={!bmcData && !rawMarkdown}
+            aria-label="Share canvas"
+          >
+            <div className="w-full h-full flex items-center justify-center">
+              <Share2
+                className={`transition-all duration-200 ${
+                  buttonsExpanded ? "w-6 h-6" : "w-4 h-4"
+                } text-white`}
+              />
+            </div>
+          </button>
+        </div>
+      )}
+
+      {/* Mobile Menu Dropdown */}
+      {isMobile && mobileMenuOpen && (
         <div
-          className={`mobile-menu fixed top-4 left-4 z-50 ${
+          className={`mobile-menu fixed top-20 left-4 z-50 w-80 ${
             isDarkMode
               ? "bg-gray-800 border-gray-700"
               : "bg-white border-gray-200"
-          } rounded-xl shadow-xl border transition-all duration-300 ${
-            mobileMenuOpen ? "w-80" : "w-12 h-12"
-          }`}
+          } rounded-xl shadow-xl border transition-all duration-300`}
         >
-          {!mobileMenuOpen ? (
-            <button
-              className="mobile-menu-button w-12 h-12 flex items-center justify-center rounded-xl focus:outline-none"
-              onClick={() => setMobileMenuOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu
-                className={`w-6 h-6 ${
-                  isDarkMode ? "text-gray-200" : "text-gray-700"
+          <div className="p-4">
+            {/* Menu Header */}
+            <div className="flex items-center justify-between mb-4">
+              <h2
+                className={`font-bold text-lg ${
+                  isDarkMode ? "text-gray-100" : "text-gray-800"
                 }`}
-              />
-            </button>
-          ) : (
-            <div className="p-4">
-              {/* Menu Header */}
-              <div className="flex items-center justify-between mb-4">
-                <h2
-                  className={`font-bold text-lg ${
-                    isDarkMode ? "text-gray-100" : "text-gray-800"
-                  }`}
-                >
-                  BMC Canvas
-                </h2>
+              >
+                BMC Canvas
+              </h2>
+            </div>
+
+            {/* File Info */}
+            {fileName && (
+              <div
+                className={`flex items-center space-x-2 ${
+                  isDarkMode
+                    ? "bg-blue-900/30 text-blue-300"
+                    : "bg-blue-50 text-blue-700"
+                } px-3 py-2 rounded-lg mb-4`}
+              >
+                <FileText className="w-4 h-4" />
+                <span className="text-sm font-medium truncate">{fileName}</span>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="space-y-3">
+              {/* File Actions */}
+              <div className="space-y-2">
                 <button
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`p-1 rounded-lg ${
+                  onClick={() => {
+                    fileInputRef.current?.click();
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-3 ${
                     isDarkMode
-                      ? "hover:bg-gray-700 text-gray-300"
-                      : "hover:bg-gray-100 text-gray-600"
-                  }`}
+                      ? "bg-blue-700 hover:bg-blue-600"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  } text-white px-4 py-3 rounded-lg transition-colors`}
                 >
-                  <X className="w-5 h-5" />
+                  <Upload className="w-5 h-5" />
+                  <span className="font-medium">Select BMC File</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    downloadTemplate();
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center space-x-3 ${
+                    isDarkMode
+                      ? "bg-green-800 hover:bg-green-700 text-green-200"
+                      : "bg-green-600 hover:bg-green-700 text-white"
+                  } px-4 py-3 rounded-lg transition-colors`}
+                >
+                  <Download className="w-5 h-5" />
+                  <span className="font-medium">Download Template</span>
                 </button>
               </div>
 
-              {/* File Info */}
-              {fileName && (
-                <div
-                  className={`flex items-center space-x-2 ${
-                    isDarkMode
-                      ? "bg-blue-900/30 text-blue-300"
-                      : "bg-blue-50 text-blue-700"
-                  } px-3 py-2 rounded-lg mb-4`}
-                >
-                  <FileText className="w-4 h-4" />
-                  <span className="text-sm font-medium truncate">
-                    {fileName}
-                  </span>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                {/* File Actions */}
-                <div className="space-y-2">
+              {/* View Controls */}
+              <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`w-full flex items-center space-x-3 ${
-                      isDarkMode
-                        ? "bg-blue-700 hover:bg-blue-600"
-                        : "bg-blue-600 hover:bg-blue-700"
-                    } text-white px-4 py-3 rounded-lg transition-colors`}
-                  >
-                    <Upload className="w-5 h-5" />
-                    <span className="font-medium">Upload BMC File</span>
-                  </button>
-
-                  <button
-                    onClick={downloadTemplate}
-                    className={`w-full flex items-center space-x-3 ${
-                      isDarkMode
-                        ? "bg-green-800 hover:bg-green-700 text-green-200"
-                        : "bg-green-600 hover:bg-green-700 text-white"
-                    } px-4 py-3 rounded-lg transition-colors`}
-                  >
-                    <Download className="w-5 h-5" />
-                    <span className="font-medium">Download Template</span>
-                  </button>
-
-                  <button
-                    onClick={handleShare}
-                    disabled={!bmcData && !rawMarkdown}
-                    className={`w-full flex items-center space-x-3 ${
-                      isDarkMode
-                        ? "bg-purple-800 hover:bg-purple-700 text-purple-200 disabled:bg-gray-700 disabled:text-gray-500"
-                        : "bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
-                    } px-4 py-3 rounded-lg transition-colors disabled:cursor-not-allowed`}
-                  >
-                    <Share2 className="w-5 h-5" />
-                    <span className="font-medium">Share Canvas</span>
-                  </button>
-                </div>
-
-                {/* View Controls */}
-                <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={zoomIn}
-                      className={`flex items-center justify-center space-x-2 ${
-                        isDarkMode
-                          ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                      } px-3 py-3 rounded-lg transition-colors`}
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                      <span className="text-sm">Zoom +</span>
-                    </button>
-
-                    <button
-                      onClick={zoomOut}
-                      className={`flex items-center justify-center space-x-2 ${
-                        isDarkMode
-                          ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                      } px-3 py-3 rounded-lg transition-colors`}
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                      <span className="text-sm">Zoom -</span>
-                    </button>
-
-                    <button
-                      onClick={fitToView}
-                      className={`flex items-center justify-center space-x-2 ${
-                        isDarkMode
-                          ? "bg-emerald-800 hover:bg-emerald-700 text-emerald-200"
-                          : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                      } px-3 py-3 rounded-lg transition-colors`}
-                    >
-                      <Maximize2 className="w-4 h-4" />
-                      <span className="text-sm">Fit</span>
-                    </button>
-
-                    <button
-                      onClick={resetView}
-                      className={`flex items-center justify-center space-x-2 ${
-                        isDarkMode
-                          ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                      } px-3 py-3 rounded-lg transition-colors`}
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span className="text-sm">Reset</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Settings */}
-                <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
-                  <button
-                    onClick={toggleDarkMode}
-                    className={`w-full flex items-center space-x-3 ${
+                    onClick={() => {
+                      zoomIn();
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center space-x-2 ${
                       isDarkMode
                         ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
                         : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                    } px-4 py-3 rounded-lg transition-colors`}
+                    } px-3 py-3 rounded-lg transition-colors`}
                   >
-                    {isDarkMode ? (
-                      <Sun className="w-5 h-5" />
-                    ) : (
-                      <Moon className="w-5 h-5" />
-                    )}
-                    <span className="font-medium">
-                      {isDarkMode ? "Light Mode" : "Dark Mode"}
-                    </span>
+                    <ZoomIn className="w-4 h-4" />
+                    <span className="text-sm">Zoom +</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      zoomOut();
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center space-x-2 ${
+                      isDarkMode
+                        ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                        : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                    } px-3 py-3 rounded-lg transition-colors`}
+                  >
+                    <ZoomOut className="w-4 h-4" />
+                    <span className="text-sm">Zoom -</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      fitToView();
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center space-x-2 ${
+                      isDarkMode
+                        ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                        : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                    } px-3 py-3 rounded-lg transition-colors`}
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                    <span className="text-sm">Fit</span>
+                  </button>
+
+                  {/* <button
+                    onClick={() => {
+                      fitToView();
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center space-x-2 ${
+                      isDarkMode
+                        ? "bg-emerald-800 hover:bg-emerald-700 text-emerald-200"
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    } px-3 py-3 rounded-lg transition-colors`}
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                    <span className="text-sm">Fit</span>
+                  </button> */}
+
+                  <button
+                    onClick={() => {
+                      resetView();
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex items-center justify-center space-x-2 ${
+                      isDarkMode
+                        ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                        : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                    } px-3 py-3 rounded-lg transition-colors`}
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span className="text-sm">Reset</span>
                   </button>
                 </div>
+              </div>
 
-                {/* Zoom Info */}
-                <div className="text-center">
-                  <span
-                    className={`text-sm ${
-                      isDarkMode ? "text-gray-400" : "text-gray-600"
-                    }`}
-                  >
-                    Zoom: {Math.round(transform.scale * 100)}%
+              {/* Settings */}
+              <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
+                <button
+                  onClick={() => {
+                    toggleDarkMode();
+                  }}
+                  className={`w-full flex items-center space-x-3 ${
+                    isDarkMode
+                      ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                      : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                  } px-4 py-3 rounded-lg transition-colors`}
+                >
+                  {isDarkMode ? (
+                    <Sun className="w-5 h-5" />
+                  ) : (
+                    <Moon className="w-5 h-5" />
+                  )}
+                  <span className="font-medium">
+                    {isDarkMode ? "Light Mode" : "Dark Mode"}
                   </span>
-                </div>
+                </button>
+              </div>
 
-                {/* Mobile File Picker Note */}
-                <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
-                  <p
-                    className={`text-xs ${
-                      isDarkMode ? "text-gray-400" : "text-gray-500"
-                    } text-center`}
-                  >
-                    💡 Tap "Upload BMC File" to select files from your device
+              {/* Zoom Info */}
+              <div className="text-center">
+                <span
+                  className={`text-sm ${
+                    isDarkMode ? "text-gray-400" : "text-gray-600"
+                  }`}
+                >
+                  Zoom: {Math.round(transform.scale * 100)}%
+                </span>
+              </div>
+
+              {/* Mobile Usage Tips */}
+              <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
+                <div
+                  className={`text-xs ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  } space-y-1`}
+                >
+                  <p>
+                    💡 <strong>Touch Tips:</strong>
                   </p>
+                  <p>• Single finger: Drag to pan</p>
+                  <p>• Two fingers: Pinch to zoom</p>
+                  <p>• Buttons shrink during interaction</p>
                 </div>
               </div>
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -1319,8 +1315,8 @@ const DynamicBMCCanvas = () => {
                 onClick={fitToView}
                 className={`flex items-center space-x-1 ${
                   isDarkMode
-                    ? "bg-emerald-800 hover:bg-emerald-700 text-emerald-200"
-                    : "bg-emerald-100 hover:bg-emerald-200 text-emerald-700"
+                    ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                 } px-3 py-2 rounded-lg transition-colors`}
               >
                 <Maximize2 className="w-4 h-4" />
@@ -1489,7 +1485,7 @@ const DynamicBMCCanvas = () => {
                   } mb-6 max-w-md`}
                 >
                   {isMobile
-                    ? "Tap the menu button to upload your Business Model Canvas file"
+                    ? "Tap the menu button to upload your Business Model Canvas file. Use pinch gestures to zoom and single finger to pan."
                     : "Select a markdown file to generate your Business Model Canvas visualization"}
                 </p>
                 {!isMobile && (
@@ -1540,7 +1536,7 @@ const DynamicBMCCanvas = () => {
   );
 };
 
-// --- Unicode-safe base64 encode/decode ---
+// Unicode-safe base64 encode/decode
 function base64EncodeUnicode(str) {
   return btoa(
     encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function (match, p1) {
@@ -1548,6 +1544,7 @@ function base64EncodeUnicode(str) {
     })
   );
 }
+
 function base64DecodeUnicode(str) {
   return decodeURIComponent(
     Array.prototype.map
