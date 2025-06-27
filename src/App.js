@@ -10,8 +10,10 @@ import {
   Printer,
   Moon,
   Sun,
+  Menu,
+  X,
+  Share2,
 } from "lucide-react";
-import { useLocation } from "react-router-dom";
 import "./App.css";
 
 // Utility CSS for hiding scrollbars and disabling selection
@@ -41,9 +43,33 @@ const DynamicBMCCanvas = () => {
     height: 800,
     gridTemplate: "repeat(5, 280px)",
   });
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [shareLink, setShareLink] = useState("");
   const [rawMarkdown, setRawMarkdown] = useState("");
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+
+  // Listen for window resize to update mobile state
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+      if (window.innerWidth > 768) {
+        setMobileMenuOpen(false); // Close mobile menu on desktop
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Toast notification system
+  const showToastMessage = (message) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => {
+      setShowToast(false);
+    }, 3000);
+  };
 
   // Standard BMC layout - defined early to avoid reference errors
   const bmcSections = [
@@ -404,6 +430,7 @@ const DynamicBMCCanvas = () => {
           setBmcTitle(title);
           setFileName(file.name);
           setTransform({ x: 50, y: 50, scale: 0.8 });
+          setMobileMenuOpen(false); // Close menu after upload
         };
         reader.readAsText(file);
       }
@@ -569,28 +596,52 @@ const DynamicBMCCanvas = () => {
     setIsDragging(false);
   }, []);
 
-  // --- Touch handlers for mobile pan ---
-  const touchState = useRef({ x: 0, y: 0, dragging: false });
+  // --- Touch handlers for mobile pan - FIXED VERSION ---
+  const touchState = useRef({
+    x: 0,
+    y: 0,
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    transformAtStart: { x: 0, y: 0, scale: 1 },
+  });
 
-  const handleTouchStart = (e) => {
-    if (e.touches.length === 1) {
-      touchState.current.dragging = true;
-      touchState.current.x = e.touches[0].clientX - transform.x;
-      touchState.current.y = e.touches[0].clientY - transform.y;
-    }
-  };
-  const handleTouchMove = (e) => {
+  const handleTouchStart = useCallback(
+    (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        touchState.current.dragging = true;
+        touchState.current.startX = touch.clientX;
+        touchState.current.startY = touch.clientY;
+        touchState.current.transformAtStart = { ...transform };
+
+        // Prevent default to avoid scrolling
+        e.preventDefault();
+      }
+    },
+    [transform]
+  );
+
+  const handleTouchMove = useCallback((e) => {
     if (touchState.current.dragging && e.touches.length === 1) {
-      setTransform((prev) => ({
-        ...prev,
-        x: e.touches[0].clientX - touchState.current.x,
-        y: e.touches[0].clientY - touchState.current.y,
-      }));
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - touchState.current.startX;
+      const deltaY = touch.clientY - touchState.current.startY;
+
+      setTransform({
+        ...touchState.current.transformAtStart,
+        x: touchState.current.transformAtStart.x + deltaX,
+        y: touchState.current.transformAtStart.y + deltaY,
+      });
+
+      // Prevent default to avoid scrolling
+      e.preventDefault();
     }
-  };
-  const handleTouchEnd = () => {
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
     touchState.current.dragging = false;
-  };
+  }, []);
 
   // --- Zoom sensitivity reduced ---
   const handleWheel = useCallback((e) => {
@@ -700,7 +751,14 @@ const DynamicBMCCanvas = () => {
       canvas.removeEventListener("touchmove", handleTouchMove);
       canvas.removeEventListener("touchend", handleTouchEnd);
     };
-  }, [handleWheel, handleMouseMove, handleMouseUp]);
+  }, [
+    handleWheel,
+    handleMouseMove,
+    handleMouseUp,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd,
+  ]);
 
   // --- Load BMC from URL param on mount ---
   useEffect(() => {
@@ -724,6 +782,13 @@ const DynamicBMCCanvas = () => {
         setBmcTitle(title);
         setFileName(fileObj.filename || "Shared BMC");
         setTransform({ x: 50, y: 50, scale: 0.8 });
+
+        // Clean URL after loading data
+        window.history.replaceState(
+          {},
+          document.title,
+          window.location.pathname
+        );
       } catch (e) {
         // ignore if invalid
       }
@@ -751,9 +816,35 @@ const DynamicBMCCanvas = () => {
     );
     const url = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
     setShareLink(url);
-    navigator.clipboard.writeText(url);
-    alert("Sharable link copied to clipboard!");
+
+    // Copy to clipboard and show toast
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        showToastMessage("🔗 Shareable link copied to clipboard!");
+      })
+      .catch(() => {
+        showToastMessage("❌ Failed to copy link to clipboard");
+      });
+
+    setMobileMenuOpen(false); // Close menu after sharing
   };
+
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (
+        isMobile &&
+        mobileMenuOpen &&
+        !e.target.closest(".mobile-menu") &&
+        !e.target.closest(".mobile-menu-button")
+      ) {
+        setMobileMenuOpen(false);
+      }
+    };
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, [isMobile, mobileMenuOpen]);
 
   // Render BMC section
   const renderBMCSection = (section) => {
@@ -837,212 +928,425 @@ const DynamicBMCCanvas = () => {
       }`}
       style={hideScrollbarStyle}
     >
-      {/* Header */}
-      <div
-        className={`$${
-          isDarkMode
-            ? "bg-gray-800 border-gray-700"
-            : "bg-white border-gray-200"
-        } shadow-sm border-b px-6 py-4 flex items-center justify-between`}
-      >
-        <div className="flex items-center space-x-4">
-          <h1
-            className={`text-2xl font-bold ${
-              isDarkMode ? "text-gray-100" : "text-gray-800"
-            }`}
+      {/* Toast Notification */}
+      {showToast && (
+        <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-2 duration-300">
+          <div
+            className={`${
+              isDarkMode
+                ? "bg-gray-800 border-gray-600 text-gray-100"
+                : "bg-white border-gray-200 text-gray-800"
+            } border rounded-lg px-4 py-3 shadow-lg flex items-center space-x-2 max-w-sm`}
           >
-            Business Model Canvas
-          </h1>
-          {fileName && (
-            <div
-              className={`flex items-center space-x-2 ${
-                isDarkMode
-                  ? "bg-blue-900/50 text-blue-300"
-                  : "bg-blue-50 text-blue-700"
-              } px-3 py-1 rounded-lg`}
+            <span className="text-sm font-medium">{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Menu Overlay */}
+      {isMobile && mobileMenuOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40" />
+      )}
+
+      {/* Mobile Floating Menu */}
+      {isMobile && (
+        <div
+          className={`mobile-menu fixed top-4 left-4 z-50 ${
+            isDarkMode
+              ? "bg-gray-800 border-gray-700"
+              : "bg-white border-gray-200"
+          } rounded-xl shadow-xl border transition-all duration-300 ${
+            mobileMenuOpen ? "w-80" : "w-12 h-12"
+          }`}
+        >
+          {!mobileMenuOpen ? (
+            <button
+              className="mobile-menu-button w-12 h-12 flex items-center justify-center rounded-xl focus:outline-none"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open menu"
             >
-              <FileText className="w-4 h-4" />
-              <span className="text-sm font-medium">{fileName}</span>
+              <Menu
+                className={`w-6 h-6 ${
+                  isDarkMode ? "text-gray-200" : "text-gray-700"
+                }`}
+              />
+            </button>
+          ) : (
+            <div className="p-4">
+              {/* Menu Header */}
+              <div className="flex items-center justify-between mb-4">
+                <h2
+                  className={`font-bold text-lg ${
+                    isDarkMode ? "text-gray-100" : "text-gray-800"
+                  }`}
+                >
+                  BMC Canvas
+                </h2>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`p-1 rounded-lg ${
+                    isDarkMode
+                      ? "hover:bg-gray-700 text-gray-300"
+                      : "hover:bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* File Info */}
+              {fileName && (
+                <div
+                  className={`flex items-center space-x-2 ${
+                    isDarkMode
+                      ? "bg-blue-900/30 text-blue-300"
+                      : "bg-blue-50 text-blue-700"
+                  } px-3 py-2 rounded-lg mb-4`}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span className="text-sm font-medium truncate">
+                    {fileName}
+                  </span>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="space-y-3">
+                {/* File Actions */}
+                <div className="space-y-2">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`w-full flex items-center space-x-3 ${
+                      isDarkMode
+                        ? "bg-blue-700 hover:bg-blue-600"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    } text-white px-4 py-3 rounded-lg transition-colors`}
+                  >
+                    <Upload className="w-5 h-5" />
+                    <span className="font-medium">Upload BMC File</span>
+                  </button>
+
+                  <button
+                    onClick={downloadTemplate}
+                    className={`w-full flex items-center space-x-3 ${
+                      isDarkMode
+                        ? "bg-green-800 hover:bg-green-700 text-green-200"
+                        : "bg-green-600 hover:bg-green-700 text-white"
+                    } px-4 py-3 rounded-lg transition-colors`}
+                  >
+                    <Download className="w-5 h-5" />
+                    <span className="font-medium">Download Template</span>
+                  </button>
+
+                  <button
+                    onClick={handleShare}
+                    disabled={!bmcData && !rawMarkdown}
+                    className={`w-full flex items-center space-x-3 ${
+                      isDarkMode
+                        ? "bg-purple-800 hover:bg-purple-700 text-purple-200 disabled:bg-gray-700 disabled:text-gray-500"
+                        : "bg-purple-600 hover:bg-purple-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
+                    } px-4 py-3 rounded-lg transition-colors disabled:cursor-not-allowed`}
+                  >
+                    <Share2 className="w-5 h-5" />
+                    <span className="font-medium">Share Canvas</span>
+                  </button>
+                </div>
+
+                {/* View Controls */}
+                <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={zoomIn}
+                      className={`flex items-center justify-center space-x-2 ${
+                        isDarkMode
+                          ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                      } px-3 py-3 rounded-lg transition-colors`}
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                      <span className="text-sm">Zoom +</span>
+                    </button>
+
+                    <button
+                      onClick={zoomOut}
+                      className={`flex items-center justify-center space-x-2 ${
+                        isDarkMode
+                          ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                      } px-3 py-3 rounded-lg transition-colors`}
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                      <span className="text-sm">Zoom -</span>
+                    </button>
+
+                    <button
+                      onClick={fitToView}
+                      className={`flex items-center justify-center space-x-2 ${
+                        isDarkMode
+                          ? "bg-emerald-800 hover:bg-emerald-700 text-emerald-200"
+                          : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                      } px-3 py-3 rounded-lg transition-colors`}
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                      <span className="text-sm">Fit</span>
+                    </button>
+
+                    <button
+                      onClick={resetView}
+                      className={`flex items-center justify-center space-x-2 ${
+                        isDarkMode
+                          ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                          : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                      } px-3 py-3 rounded-lg transition-colors`}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span className="text-sm">Reset</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Settings */}
+                <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
+                  <button
+                    onClick={toggleDarkMode}
+                    className={`w-full flex items-center space-x-3 ${
+                      isDarkMode
+                        ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                        : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                    } px-4 py-3 rounded-lg transition-colors`}
+                  >
+                    {isDarkMode ? (
+                      <Sun className="w-5 h-5" />
+                    ) : (
+                      <Moon className="w-5 h-5" />
+                    )}
+                    <span className="font-medium">
+                      {isDarkMode ? "Light Mode" : "Dark Mode"}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Zoom Info */}
+                <div className="text-center">
+                  <span
+                    className={`text-sm ${
+                      isDarkMode ? "text-gray-400" : "text-gray-600"
+                    }`}
+                  >
+                    Zoom: {Math.round(transform.scale * 100)}%
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </div>
+      )}
 
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={toggleDarkMode}
-            className={`flex items-center space-x-2 ${
-              isDarkMode
-                ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-            } px-3 py-2 rounded-lg transition-colors`}
-          >
-            {isDarkMode ? (
-              <Sun className="w-4 h-4" />
-            ) : (
-              <Moon className="w-4 h-4" />
-            )}
-            <span className="text-sm font-medium">
-              {isDarkMode ? "Light" : "Dark"}
-            </span>
-          </button>
-
-          <button
-            onClick={downloadTemplate}
-            className={`flex items-center space-x-2 ${
-              isDarkMode
-                ? "bg-green-800 hover:bg-green-700 text-green-200"
-                : "bg-green-600 hover:bg-green-700 text-white"
-            } px-4 py-2 rounded-lg transition-colors font-medium`}
-          >
-            <Download className="w-4 h-4" />
-            <span>Download Template</span>
-          </button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".md,.markdown"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`flex items-center space-x-2 ${
-              isDarkMode
-                ? "bg-blue-700 hover:bg-blue-600"
-                : "bg-blue-600 hover:bg-blue-700"
-            } text-white px-4 py-2 rounded-lg transition-colors font-medium`}
-          >
-            <Upload className="w-4 h-4" />
-            <span>Select BMC File</span>
-          </button>
-
-          <button
-            onClick={handleShare}
-            className={`flex items-center space-x-2 ${
-              isDarkMode
-                ? "bg-blue-700 hover:bg-blue-600"
-                : "bg-blue-600 hover:bg-blue-700"
-            } px-4 py-2 rounded-lg transition-colors text-white font-medium`}
-            disabled={!bmcData && !rawMarkdown}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              x="0px"
-              y="0px"
-              width="20"
-              height="20"
-              viewBox="0 0 30 30"
-            >
-              <path
-                d="M 23 3 A 4 4 0 0 0 19 7 A 4 4 0 0 0 19.09375 7.8359375 L 10.011719 12.376953 A 4 4 0 0 0 7 11 A 4 4 0 0 0 3 15 A 4 4 0 0 0 7 19 A 4 4 0 0 0 10.013672 17.625 L 19.089844 22.164062 A 4 4 0 0 0 19 23 A 4 4 0 0 0 23 27 A 4 4 0 0 0 27 23 A 4 4 0 0 0 23 19 A 4 4 0 0 0 19.986328 20.375 L 10.910156 15.835938 A 4 4 0 0 0 11 15 A 4 4 0 0 0 10.90625 14.166016 L 19.988281 9.625 A 4 4 0 0 0 23 11 A 4 4 0 0 0 27 7 A 4 4 0 0 0 23 3 z"
-                fill={isDarkMode ? "#ffffff" : "#ffffff"}
-              ></path>
-            </svg>
-            <span>Share</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div
-        className={`${
-          isDarkMode
-            ? "bg-gray-800 border-gray-700"
-            : "bg-white border-gray-200"
-        } border-b px-6 py-3 flex items-center justify-between`}
-      >
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={zoomIn}
-            className={`flex items-center space-x-1 ${
-              isDarkMode
-                ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-            } px-3 py-2 rounded-lg transition-colors`}
-          >
-            <ZoomIn className="w-4 h-4" />
-            <span className="text-sm font-medium">Zoom In</span>
-          </button>
-
-          <button
-            onClick={zoomOut}
-            className={`flex items-center space-x-1 ${
-              isDarkMode
-                ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-            } px-3 py-2 rounded-lg transition-colors`}
-          >
-            <ZoomOut className="w-4 h-4" />
-            <span className="text-sm font-medium">Zoom Out</span>
-          </button>
-
-          <button
-            onClick={fitToView}
-            className={`flex items-center space-x-1 ${
-              isDarkMode
-                ? "bg-emerald-800 hover:bg-emerald-700 text-emerald-200"
-                : "bg-emerald-100 hover:bg-emerald-200 text-emerald-700"
-            } px-3 py-2 rounded-lg transition-colors`}
-          >
-            <Maximize2 className="w-4 h-4" />
-            <span className="text-sm font-medium">Fit to Screen</span>
-          </button>
-
-          <button
-            onClick={resetView}
-            className={`flex items-center space-x-1 ${
-              isDarkMode
-                ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-            } px-3 py-2 rounded-lg transition-colors`}
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span className="text-sm font-medium">Reset</span>
-          </button>
-
-          {false && bmcData && (
-            <button
-              onClick={printBMC}
-              className={`flex items-center space-x-1 ${
-                isDarkMode
-                  ? "bg-purple-800 hover:bg-purple-700 text-purple-200"
-                  : "bg-purple-100 hover:bg-purple-200 text-purple-700"
-              } px-3 py-2 rounded-lg transition-colors`}
-            >
-              <Printer className="w-4 h-4" />
-              <span className="text-sm font-medium">Print BMC</span>
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center space-x-4">
+      {/* Desktop Header - Hidden on Mobile */}
+      {!isMobile && (
+        <>
+          {/* Top Bar (Header) */}
           <div
-            className={`text-sm ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}
+            className={`${
+              isDarkMode
+                ? "bg-gray-800 border-gray-700"
+                : "bg-white border-gray-200"
+            } shadow-sm border-b px-6 py-4 flex items-center justify-between`}
           >
-            Drag to pan • Scroll to zoom • Use "Fit to Screen" to center
-            optimally
+            <div className="flex items-center space-x-4">
+              <h1
+                className={`text-2xl font-bold ${
+                  isDarkMode ? "text-gray-100" : "text-gray-800"
+                }`}
+              >
+                Business Model Canvas
+              </h1>
+              {fileName && (
+                <div
+                  className={`flex items-center space-x-2 ${
+                    isDarkMode
+                      ? "bg-blue-900/50 text-blue-300"
+                      : "bg-blue-50 text-blue-700"
+                  } px-3 py-1 rounded-lg`}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span className="text-sm font-medium">{fileName}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={toggleDarkMode}
+                className={`flex items-center space-x-2 ${
+                  isDarkMode
+                    ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                } px-3 py-2 rounded-lg transition-colors`}
+              >
+                {isDarkMode ? (
+                  <Sun className="w-4 h-4" />
+                ) : (
+                  <Moon className="w-4 h-4" />
+                )}
+                <span className="text-sm font-medium">
+                  {isDarkMode ? "Light" : "Dark"}
+                </span>
+              </button>
+
+              <button
+                onClick={downloadTemplate}
+                className={`flex items-center space-x-2 ${
+                  isDarkMode
+                    ? "bg-green-800 hover:bg-green-700 text-green-200"
+                    : "bg-green-600 hover:bg-green-700 text-white"
+                } px-4 py-2 rounded-lg transition-colors font-medium`}
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Template</span>
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".md,.markdown"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={`flex items-center space-x-2 ${
+                  isDarkMode
+                    ? "bg-blue-700 hover:bg-blue-600"
+                    : "bg-blue-600 hover:bg-blue-700"
+                } text-white px-4 py-2 rounded-lg transition-colors font-medium`}
+              >
+                <Upload className="w-4 h-4" />
+                <span>Select BMC File</span>
+              </button>
+
+              <button
+                onClick={handleShare}
+                className={`flex items-center space-x-2 ${
+                  isDarkMode
+                    ? "bg-purple-800 hover:bg-purple-700 text-purple-400"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-600"
+                } px-4 py-2 rounded-lg transition-colors font-medium`}
+                disabled={!bmcData && !rawMarkdown}
+              >
+                <Share2 className="w-4 h-4" />
+                <span>Share</span>
+              </button>
+            </div>
           </div>
+
+          {/* Controls */}
           <div
-            className={`text-sm ${
-              isDarkMode ? "text-gray-300" : "text-gray-600"
-            } font-medium`}
+            className={`${
+              isDarkMode
+                ? "bg-gray-800 border-gray-700"
+                : "bg-white border-gray-200"
+            } border-b px-6 py-3 flex items-center justify-between`}
           >
-            Zoom: {Math.round(transform.scale * 100)}%
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={zoomIn}
+                className={`flex items-center space-x-1 ${
+                  isDarkMode
+                    ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                } px-3 py-2 rounded-lg transition-colors`}
+              >
+                <ZoomIn className="w-4 h-4" />
+                <span className="text-sm font-medium">Zoom In</span>
+              </button>
+
+              <button
+                onClick={zoomOut}
+                className={`flex items-center space-x-1 ${
+                  isDarkMode
+                    ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                } px-3 py-2 rounded-lg transition-colors`}
+              >
+                <ZoomOut className="w-4 h-4" />
+                <span className="text-sm font-medium">Zoom Out</span>
+              </button>
+
+              <button
+                onClick={fitToView}
+                className={`flex items-center space-x-1 ${
+                  isDarkMode
+                    ? "bg-emerald-800 hover:bg-emerald-700 text-emerald-200"
+                    : "bg-emerald-100 hover:bg-emerald-200 text-emerald-700"
+                } px-3 py-2 rounded-lg transition-colors`}
+              >
+                <Maximize2 className="w-4 h-4" />
+                <span className="text-sm font-medium">Fit to Screen</span>
+              </button>
+
+              <button
+                onClick={resetView}
+                className={`flex items-center space-x-1 ${
+                  isDarkMode
+                    ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                } px-3 py-2 rounded-lg transition-colors`}
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span className="text-sm font-medium">Reset</span>
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <div
+                className={`text-sm ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
+                }`}
+              >
+                Drag to pan • Scroll to zoom • Use "Fit to Screen" to center
+                optimally
+              </div>
+              <div
+                className={`text-sm ${
+                  isDarkMode ? "text-gray-300" : "text-gray-600"
+                } font-medium`}
+              >
+                Zoom: {Math.round(transform.scale * 100)}%
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".md,.markdown"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
 
       {/* Canvas */}
-      <div className="flex-1 relative" style={hideScrollbarStyle}>
+      <div
+        className="flex-1 relative"
+        style={{
+          ...hideScrollbarStyle,
+          minHeight: isMobile ? "100vh" : "auto",
+          minWidth: isMobile ? "100vw" : "auto",
+        }}
+      >
         <div
           ref={canvasRef}
           className={`w-full h-full bmc-canvas-area ${
             isDragging ? "cursor-grabbing" : "cursor-grab"
           }`}
-          style={{ minWidth: "100%", minHeight: "100%", ...hideScrollbarStyle }}
+          style={{
+            minWidth: "100%",
+            minHeight: "100%",
+            ...hideScrollbarStyle,
+          }}
           onMouseDown={handleMouseDown}
         >
           {bmcData ? (
@@ -1060,7 +1364,7 @@ const DynamicBMCCanvas = () => {
             >
               <div
                 ref={bmcContentRef}
-                className={`$${
+                className={`${
                   isDarkMode
                     ? "bg-gray-800 border-gray-600"
                     : "bg-white border-gray-300"
@@ -1142,48 +1446,54 @@ const DynamicBMCCanvas = () => {
                     isDarkMode ? "text-gray-400" : "text-gray-500"
                   } mb-6 max-w-md`}
                 >
-                  Select a markdown file to generate your Business Model Canvas
-                  visualization
+                  {isMobile
+                    ? "Tap the menu button to upload your Business Model Canvas file"
+                    : "Select a markdown file to generate your Business Model Canvas visualization"}
                 </p>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`${
-                    isDarkMode
-                      ? "bg-blue-700 hover:bg-blue-600"
-                      : "bg-blue-600 hover:bg-blue-700"
-                  } text-white px-6 py-3 rounded-lg transition-colors font-medium`}
-                >
-                  Choose File
-                </button>
+                {!isMobile && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`${
+                      isDarkMode
+                        ? "bg-blue-700 hover:bg-blue-600"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    } text-white px-6 py-3 rounded-lg transition-colors font-medium`}
+                  >
+                    Choose File
+                  </button>
+                )}
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Footer */}
-      <div
-        className={`${
-          isDarkMode
-            ? "bg-gray-800 border-gray-700"
-            : "bg-white border-gray-200"
-        } border-t px-6 py-3 flex items-center justify-between`}
-      >
+      {/* Footer - Hidden on Mobile */}
+      {!isMobile && (
         <div
-          className={`text-sm ${
-            isDarkMode ? "text-gray-400" : "text-gray-500"
-          }`}
+          className={`${
+            isDarkMode
+              ? "bg-gray-800 border-gray-700"
+              : "bg-white border-gray-200"
+          } border-t px-6 py-3 flex items-center justify-between`}
         >
-          🔒 Your files never leave your browser - completely private and secure
+          <div
+            className={`text-sm ${
+              isDarkMode ? "text-gray-400" : "text-gray-500"
+            }`}
+          >
+            🔒 Your files never leave your browser - completely private and
+            secure
+          </div>
+          <div
+            className={`text-sm ${
+              isDarkMode ? "text-gray-400" : "text-gray-500"
+            }`}
+          >
+            Made with ❤️ for pitchers
+          </div>
         </div>
-        <div
-          className={`text-sm ${
-            isDarkMode ? "text-gray-400" : "text-gray-500"
-          }`}
-        >
-          Made with ❤️ for pitchers
-        </div>
-      </div>
+      )}
     </div>
   );
 };
