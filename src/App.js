@@ -554,20 +554,20 @@ const DynamicBMCCanvas = () => {
 
   const fitToView = () => {
     const container = canvasRef.current;
-    const bmcElement = bmcContentRef.current;
-    if (!container || !bmcElement) return;
+    if (!container) return;
 
     const containerRect = container.getBoundingClientRect();
-    const bmcRect = bmcElement.getBoundingClientRect();
-    const padding = 60; // Increased padding
+    const bmcWidth = 1640; // 1480px grid + 160px padding (80px each side)
+    const bmcHeight = 1000; // Approximate BMC height
+    const padding = 40;
 
-    const scaleX = (containerRect.width - padding * 2) / 1600; // Fixed BMC width
-    const scaleY = (containerRect.height - padding * 2) / 1000; // Fixed BMC height
-    const scale = Math.min(scaleX, scaleY, 0.9); // Max scale of 0.9
+    const scaleX = (containerRect.width - padding * 2) / bmcWidth;
+    const scaleY = (containerRect.height - padding * 2) / bmcHeight;
+    const scale = Math.min(scaleX, scaleY, 1);
 
     setTransform({
-      x: (containerRect.width - 1600 * scale) / 2,
-      y: (containerRect.height - 1000 * scale) / 2,
+      x: Math.max(padding, (containerRect.width - bmcWidth * scale) / 2),
+      y: Math.max(padding, (containerRect.height - bmcHeight * scale) / 2),
       scale,
     });
   };
@@ -812,7 +812,7 @@ const DynamicBMCCanvas = () => {
             <span className="text-sm font-medium">Reset</span>
           </button>
 
-          {false && bmcData && (
+          {bmcData && (
             <button
               onClick={printBMC}
               className={`flex items-center space-x-1 ${
@@ -847,17 +847,22 @@ const DynamicBMCCanvas = () => {
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-auto">
         <div
           ref={canvasRef}
-          className="w-full h-full cursor-grab active:cursor-grabbing bmc-canvas-area"
+          className="w-full h-full cursor-grab active:cursor-grabbing bmc-canvas-area overflow-auto"
           onMouseDown={handleMouseDown}
+          style={{ minWidth: "100%", minHeight: "100%" }}
         >
           {bmcData ? (
             <div
               className="relative origin-top-left transition-transform duration-300 ease-out"
               style={{
                 transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+                minWidth: "1800px",
+                minHeight: "1200px",
+                width: "max-content",
+                height: "max-content",
               }}
             >
               <div
@@ -899,16 +904,15 @@ const DynamicBMCCanvas = () => {
                   <div
                     className="grid gap-6"
                     style={{
-                      gridTemplateColumns: "repeat(5, minmax(250px, 1fr))",
+                      gridTemplateColumns: "repeat(5, 280px)",
                       gridTemplateRows: "auto auto auto",
                       gridTemplateAreas: `
                         "partners activities value relationships segments"
                         "partners resources value channels segments" 
                         "costs costs revenue revenue revenue"
                       `,
-                      width: "100%",
-                      minWidth: "1500px",
-                      maxWidth: "1800px",
+                      width: "1480px", // 5 * 280px + 4 * 24px gaps
+                      height: "auto",
                     }}
                   >
                     {bmcSections.map(renderBMCSection)}
