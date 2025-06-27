@@ -24,6 +24,69 @@ const DynamicBMCCanvas = () => {
   const [fileName, setFileName] = useState("");
   const [bmcTitle, setBmcTitle] = useState("");
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [contentDimensions, setContentDimensions] = useState({
+    width: 1480,
+    height: 800,
+    gridTemplate: "repeat(5, 280px)",
+  });
+
+  // Standard BMC layout - defined early to avoid reference errors
+  const bmcSections = [
+    {
+      key: "keyPartners",
+      title: "Key Partners",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "partners",
+    },
+    {
+      key: "keyActivities",
+      title: "Key Activities",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "activities",
+    },
+    {
+      key: "valuePropositions",
+      title: "Value Propositions",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "value",
+    },
+    {
+      key: "customerRelationships",
+      title: "Customer Relationships",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "relationships",
+    },
+    {
+      key: "customerSegments",
+      title: "Customer Segments",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "segments",
+    },
+    {
+      key: "keyResources",
+      title: "Key Resources",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "resources",
+    },
+    {
+      key: "channels",
+      title: "Channels",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "channels",
+    },
+    {
+      key: "costStructure",
+      title: "Cost Structure",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "costs",
+    },
+    {
+      key: "revenueStreams",
+      title: "Revenue Streams",
+      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
+      gridArea: "revenue",
+    },
+  ];
 
   // Template BMC content
   const templateContent = `# Your Company Name - Business Model Canvas
@@ -86,12 +149,67 @@ const DynamicBMCCanvas = () => {
     URL.revokeObjectURL(url);
   }, []);
 
+  // Calculate dynamic content-based dimensions
+  const calculateContentDimensions = useCallback(() => {
+    if (!bmcData) return { width: 1480, height: 800 };
+
+    // Calculate content-based column widths
+    const sections = bmcSections.map((section) => {
+      const data = bmcData[section.key];
+      if (!data) return { ...section, contentWidth: 250 };
+
+      // Estimate width based on content length
+      const maxLineLength = Math.max(
+        data.title?.length || 0,
+        ...data.content.map((item) => item.length)
+      );
+
+      // Base width + extra for longer content
+      const contentWidth = Math.max(
+        250,
+        Math.min(400, 200 + maxLineLength * 3)
+      );
+
+      return { ...section, contentWidth };
+    });
+
+    // Calculate grid dimensions
+    const col1Width = Math.max(
+      sections.find((s) => s.gridArea === "partners")?.contentWidth || 250
+    );
+    const col2Width = Math.max(
+      sections.find((s) => s.gridArea === "activities")?.contentWidth || 250,
+      sections.find((s) => s.gridArea === "resources")?.contentWidth || 250
+    );
+    const col3Width = Math.max(
+      sections.find((s) => s.gridArea === "value")?.contentWidth || 250
+    );
+    const col4Width = Math.max(
+      sections.find((s) => s.gridArea === "relationships")?.contentWidth || 250,
+      sections.find((s) => s.gridArea === "channels")?.contentWidth || 250
+    );
+    const col5Width = Math.max(
+      sections.find((s) => s.gridArea === "segments")?.contentWidth || 250
+    );
+
+    const totalWidth =
+      col1Width + col2Width + col3Width + col4Width + col5Width + 4 * 24; // 4 gaps
+    const gridTemplate = `${col1Width}px ${col2Width}px ${col3Width}px ${col4Width}px ${col5Width}px`;
+
+    return {
+      width: totalWidth,
+      height: 800, // Will adjust based on content height too
+      gridTemplate,
+      columnWidths: [col1Width, col2Width, col3Width, col4Width, col5Width],
+    };
+  }, [bmcData, bmcSections]);
+
   // Toggle dark mode
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
   };
   // Standard BMC layout with fixed structure but flexible content
-  const bmcSections = [
+  const bmcSections_old = [
     {
       key: "keyPartners",
       title: "Key Partners",
@@ -554,11 +672,11 @@ const DynamicBMCCanvas = () => {
 
   const fitToView = () => {
     const container = canvasRef.current;
-    if (!container) return;
+    if (!container || !bmcData) return;
 
     const containerRect = container.getBoundingClientRect();
-    const bmcWidth = 1640; // 1480px grid + 160px padding (80px each side)
-    const bmcHeight = 1000; // Approximate BMC height
+    const bmcWidth = contentDimensions.width + 160; // Add padding
+    const bmcHeight = contentDimensions.height + 200; // Add padding + header
     const padding = 40;
 
     const scaleX = (containerRect.width - padding * 2) / bmcWidth;
@@ -812,7 +930,7 @@ const DynamicBMCCanvas = () => {
             <span className="text-sm font-medium">Reset</span>
           </button>
 
-          {bmcData && (
+          {false && bmcData && (
             <button
               onClick={printBMC}
               className={`flex items-center space-x-1 ${
@@ -859,8 +977,6 @@ const DynamicBMCCanvas = () => {
               className="relative origin-top-left transition-transform duration-300 ease-out"
               style={{
                 transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
-                minWidth: "1800px",
-                minHeight: "1200px",
                 width: "max-content",
                 height: "max-content",
               }}
@@ -904,14 +1020,14 @@ const DynamicBMCCanvas = () => {
                   <div
                     className="grid gap-6"
                     style={{
-                      gridTemplateColumns: "repeat(5, 280px)",
+                      gridTemplateColumns: contentDimensions.gridTemplate,
                       gridTemplateRows: "auto auto auto",
                       gridTemplateAreas: `
                         "partners activities value relationships segments"
                         "partners resources value channels segments" 
                         "costs costs revenue revenue revenue"
                       `,
-                      width: "1480px", // 5 * 280px + 4 * 24px gaps
+                      width: contentDimensions.width + "px",
                       height: "auto",
                     }}
                   >
