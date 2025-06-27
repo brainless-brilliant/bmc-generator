@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "/bmc-generator/static/css/main.de86cfc0.css",
-    "main.js": "/bmc-generator/static/js/main.6af72ed5.js",
+    "main.css": "/bmc-generator/static/css/main.9d4004c0.css",
+    "main.js": "/bmc-generator/static/js/main.bc6941a1.js",
     "index.html": "/bmc-generator/index.html",
-    "main.de86cfc0.css.map": "/bmc-generator/static/css/main.de86cfc0.css.map",
-    "main.6af72ed5.js.map": "/bmc-generator/static/js/main.6af72ed5.js.map"
+    "main.9d4004c0.css.map": "/bmc-generator/static/css/main.9d4004c0.css.map",
+    "main.bc6941a1.js.map": "/bmc-generator/static/js/main.bc6941a1.js.map"
   },
   "entrypoints": [
-    "static/css/main.de86cfc0.css",
-    "static/js/main.6af72ed5.js"
+    "static/css/main.9d4004c0.css",
+    "static/js/main.bc6941a1.js"
   ]
 }
