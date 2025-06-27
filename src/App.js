@@ -11,7 +11,19 @@ import {
   Moon,
   Sun,
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import "./App.css";
+
+// Utility CSS for hiding scrollbars and disabling selection
+const hideScrollbarStyle = {
+  scrollbarWidth: "none", // Firefox
+  msOverflowStyle: "none", // IE 10+
+  overflow: "hidden",
+  userSelect: "none", // Prevent text selection
+  WebkitUserSelect: "none",
+  MozUserSelect: "none",
+  msUserSelect: "none",
+};
 
 const DynamicBMCCanvas = () => {
   const canvasRef = useRef(null);
@@ -29,6 +41,9 @@ const DynamicBMCCanvas = () => {
     height: 800,
     gridTemplate: "repeat(5, 280px)",
   });
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [shareLink, setShareLink] = useState("");
+  const [rawMarkdown, setRawMarkdown] = useState("");
 
   // Standard BMC layout - defined early to avoid reference errors
   const bmcSections = [
@@ -208,63 +223,6 @@ const DynamicBMCCanvas = () => {
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
   };
-  // Standard BMC layout with fixed structure but flexible content
-  const bmcSections_old = [
-    {
-      key: "keyPartners",
-      title: "Key Partners",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "partners",
-    },
-    {
-      key: "keyActivities",
-      title: "Key Activities",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "activities",
-    },
-    {
-      key: "valuePropositions",
-      title: "Value Propositions",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "value",
-    },
-    {
-      key: "customerRelationships",
-      title: "Customer Relationships",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "relationships",
-    },
-    {
-      key: "customerSegments",
-      title: "Customer Segments",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "segments",
-    },
-    {
-      key: "keyResources",
-      title: "Key Resources",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "resources",
-    },
-    {
-      key: "channels",
-      title: "Channels",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "channels",
-    },
-    {
-      key: "costStructure",
-      title: "Cost Structure",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "costs",
-    },
-    {
-      key: "revenueStreams",
-      title: "Revenue Streams",
-      color: isDarkMode ? "bg-gray-700" : "bg-gray-100",
-      gridArea: "revenue",
-    },
-  ];
 
   // Improved markdown parser with better section mapping
   const parseMarkdownToBMC = useCallback((content) => {
@@ -440,6 +398,7 @@ const DynamicBMCCanvas = () => {
         const reader = new FileReader();
         reader.onload = (e) => {
           const content = e.target.result;
+          setRawMarkdown(content);
           const { sections: parsedData, title } = parseMarkdownToBMC(content);
           setBmcData(parsedData);
           setBmcTitle(title);
@@ -580,19 +539,15 @@ const DynamicBMCCanvas = () => {
     };
   }, [bmcTitle]);
 
-  // Canvas interaction handlers
+  // --- Mouse and touch handlers for PAN mode ---
   const handleMouseDown = useCallback(
     (e) => {
-      if (
-        e.target === canvasRef.current ||
-        e.target.closest(".bmc-canvas-area")
-      ) {
-        setIsDragging(true);
-        setDragStart({
-          x: e.clientX - transform.x,
-          y: e.clientY - transform.y,
-        });
-      }
+      if (e.button !== 0) return; // Only left click
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX - transform.x,
+        y: e.clientY - transform.y,
+      });
     },
     [transform]
   );
@@ -614,17 +569,43 @@ const DynamicBMCCanvas = () => {
     setIsDragging(false);
   }, []);
 
+  // --- Touch handlers for mobile pan ---
+  const touchState = useRef({ x: 0, y: 0, dragging: false });
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      touchState.current.dragging = true;
+      touchState.current.x = e.touches[0].clientX - transform.x;
+      touchState.current.y = e.touches[0].clientY - transform.y;
+    }
+  };
+  const handleTouchMove = (e) => {
+    if (touchState.current.dragging && e.touches.length === 1) {
+      setTransform((prev) => ({
+        ...prev,
+        x: e.touches[0].clientX - touchState.current.x,
+        y: e.touches[0].clientY - touchState.current.y,
+      }));
+    }
+  };
+  const handleTouchEnd = () => {
+    touchState.current.dragging = false;
+  };
+
+  // --- Zoom sensitivity reduced ---
   const handleWheel = useCallback((e) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.95 : 1.05;
+    // Reduce zoom factor for smoother experience
+    const ZOOM_FACTOR = 0.03; // Lower = less sensitive
+    const delta = e.deltaY * ZOOM_FACTOR;
+    const scaleMultiplier = 1 - delta;
     const rect = canvasRef.current.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
     setTransform((prev) => {
-      const newScale = Math.max(0.2, Math.min(2, prev.scale * delta));
+      let newScale = prev.scale * scaleMultiplier;
+      newScale = Math.max(0.2, Math.min(2, newScale));
       const scaleChange = newScale / prev.scale;
-
       return {
         x: mouseX - (mouseX - prev.x) * scaleChange,
         y: mouseY - (mouseY - prev.y) * scaleChange,
@@ -633,17 +614,15 @@ const DynamicBMCCanvas = () => {
     });
   }, []);
 
-  // Control functions
+  // --- Zoom in/out buttons: less aggressive ---
   const zoomIn = () => {
     const container = canvasRef.current;
     const rect = container.getBoundingClientRect();
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
-
     setTransform((prev) => {
-      const newScale = Math.min(2, prev.scale * 1.15);
+      const newScale = Math.min(2, prev.scale * 1.07); // smaller step
       const scaleChange = newScale / prev.scale;
-
       return {
         x: centerX - (centerX - prev.x) * scaleChange,
         y: centerY - (centerY - prev.y) * scaleChange,
@@ -651,17 +630,14 @@ const DynamicBMCCanvas = () => {
       };
     });
   };
-
   const zoomOut = () => {
     const container = canvasRef.current;
     const rect = container.getBoundingClientRect();
     const centerX = rect.width / 2;
     const centerY = rect.height / 2;
-
     setTransform((prev) => {
-      const newScale = Math.max(0.2, prev.scale / 1.15);
+      const newScale = Math.max(0.2, prev.scale / 1.07); // smaller step
       const scaleChange = newScale / prev.scale;
-
       return {
         x: centerX - (centerX - prev.x) * scaleChange,
         y: centerY - (centerY - prev.y) * scaleChange,
@@ -672,20 +648,31 @@ const DynamicBMCCanvas = () => {
 
   const fitToView = () => {
     const container = canvasRef.current;
-    if (!container || !bmcData) return;
+    const bmcContent = bmcContentRef.current;
+    if (!container || !bmcContent) return;
 
+    // Get visible area of the canvas
     const containerRect = container.getBoundingClientRect();
-    const bmcWidth = contentDimensions.width + 160; // Add padding
-    const bmcHeight = contentDimensions.height + 200; // Add padding + header
-    const padding = 40;
+    // Get actual BMC content size
+    const bmcRect = bmcContent.getBoundingClientRect();
 
-    const scaleX = (containerRect.width - padding * 2) / bmcWidth;
-    const scaleY = (containerRect.height - padding * 2) / bmcHeight;
+    // Remove any scrollbars from calculation
+    const padding = 40;
+    const availableWidth = containerRect.width - padding * 2;
+    const availableHeight = containerRect.height - padding * 2;
+
+    // Use actual content size for scaling
+    const scaleX = availableWidth / bmcRect.width;
+    const scaleY = availableHeight / bmcRect.height;
     const scale = Math.min(scaleX, scaleY, 1);
 
+    // Center the BMC content
+    const x = (containerRect.width - bmcRect.width * scale) / 2;
+    const y = (containerRect.height - bmcRect.height * scale) / 2;
+
     setTransform({
-      x: Math.max(padding, (containerRect.width - bmcWidth * scale) / 2),
-      y: Math.max(padding, (containerRect.height - bmcHeight * scale) / 2),
+      x: x,
+      y: y,
       scale,
     });
   };
@@ -698,17 +685,75 @@ const DynamicBMCCanvas = () => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
-
+    // Touch events
+    canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+    canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
     return () => {
       canvas.removeEventListener("wheel", handleWheel);
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchmove", handleTouchMove);
+      canvas.removeEventListener("touchend", handleTouchEnd);
     };
   }, [handleWheel, handleMouseMove, handleMouseUp]);
+
+  // --- Load BMC from URL param on mount ---
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const dataParam = params.get("data");
+    if (dataParam) {
+      try {
+        const decoded = base64DecodeUnicode(decodeURIComponent(dataParam));
+        let fileObj;
+        try {
+          fileObj = JSON.parse(decoded);
+        } catch {
+          // fallback for old links: treat as plain markdown
+          fileObj = { filename: "Shared BMC", content: decoded };
+        }
+        setRawMarkdown(fileObj.content);
+        const { sections: parsedData, title } = parseMarkdownToBMC(
+          fileObj.content
+        );
+        setBmcData(parsedData);
+        setBmcTitle(title);
+        setFileName(fileObj.filename || "Shared BMC");
+        setTransform({ x: 50, y: 50, scale: 0.8 });
+      } catch (e) {
+        // ignore if invalid
+      }
+    }
+  }, [parseMarkdownToBMC]);
+
+  // --- Share button handler ---
+  const handleShare = () => {
+    let markdown = rawMarkdown;
+    let filename = fileName || "Shared BMC";
+    if (!markdown && bmcData) {
+      // Try to reconstruct markdown from bmcData
+      markdown = Object.values(bmcData)
+        .map(
+          (section) =>
+            `## ${section.title}\n` +
+            section.content.map((item) => `- ${item}`).join("\n")
+        )
+        .join("\n\n");
+    }
+    if (!markdown) return;
+    const payload = { filename, content: markdown };
+    const encoded = encodeURIComponent(
+      base64EncodeUnicode(JSON.stringify(payload))
+    );
+    const url = `${window.location.origin}${window.location.pathname}?data=${encoded}`;
+    setShareLink(url);
+    navigator.clipboard.writeText(url);
+    alert("Sharable link copied to clipboard!");
+  };
 
   // Render BMC section
   const renderBMCSection = (section) => {
@@ -790,10 +835,11 @@ const DynamicBMCCanvas = () => {
       className={`w-full h-screen flex flex-col ${
         isDarkMode ? "bg-gray-900" : "bg-gray-50"
       }`}
+      style={hideScrollbarStyle}
     >
       {/* Header */}
       <div
-        className={`${
+        className={`$${
           isDarkMode
             ? "bg-gray-800 border-gray-700"
             : "bg-white border-gray-200"
@@ -869,6 +915,31 @@ const DynamicBMCCanvas = () => {
           >
             <Upload className="w-4 h-4" />
             <span>Select BMC File</span>
+          </button>
+
+          <button
+            onClick={handleShare}
+            className={`flex items-center space-x-2 ${
+              isDarkMode
+                ? "bg-blue-700 hover:bg-blue-600"
+                : "bg-blue-600 hover:bg-blue-700"
+            } px-4 py-2 rounded-lg transition-colors text-white font-medium`}
+            disabled={!bmcData && !rawMarkdown}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              x="0px"
+              y="0px"
+              width="20"
+              height="20"
+              viewBox="0 0 30 30"
+            >
+              <path
+                d="M 23 3 A 4 4 0 0 0 19 7 A 4 4 0 0 0 19.09375 7.8359375 L 10.011719 12.376953 A 4 4 0 0 0 7 11 A 4 4 0 0 0 3 15 A 4 4 0 0 0 7 19 A 4 4 0 0 0 10.013672 17.625 L 19.089844 22.164062 A 4 4 0 0 0 19 23 A 4 4 0 0 0 23 27 A 4 4 0 0 0 27 23 A 4 4 0 0 0 23 19 A 4 4 0 0 0 19.986328 20.375 L 10.910156 15.835938 A 4 4 0 0 0 11 15 A 4 4 0 0 0 10.90625 14.166016 L 19.988281 9.625 A 4 4 0 0 0 23 11 A 4 4 0 0 0 27 7 A 4 4 0 0 0 23 3 z"
+                fill={isDarkMode ? "#ffffff" : "#ffffff"}
+              ></path>
+            </svg>
+            <span>Share</span>
           </button>
         </div>
       </div>
@@ -965,12 +1036,14 @@ const DynamicBMCCanvas = () => {
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 relative overflow-auto">
+      <div className="flex-1 relative" style={hideScrollbarStyle}>
         <div
           ref={canvasRef}
-          className="w-full h-full cursor-grab active:cursor-grabbing bmc-canvas-area overflow-auto"
+          className={`w-full h-full bmc-canvas-area ${
+            isDragging ? "cursor-grabbing" : "cursor-grab"
+          }`}
+          style={{ minWidth: "100%", minHeight: "100%", ...hideScrollbarStyle }}
           onMouseDown={handleMouseDown}
-          style={{ minWidth: "100%", minHeight: "100%" }}
         >
           {bmcData ? (
             <div
@@ -979,16 +1052,23 @@ const DynamicBMCCanvas = () => {
                 transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
                 width: "max-content",
                 height: "max-content",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                MozUserSelect: "none",
+                msUserSelect: "none",
               }}
             >
               <div
                 ref={bmcContentRef}
-                className={`${
+                className={`$${
                   isDarkMode
                     ? "bg-gray-800 border-gray-600"
                     : "bg-white border-gray-300"
                 } rounded-xl border-2 shadow-xl overflow-hidden`}
-                style={{ fontFamily: "Montserrat, sans-serif" }}
+                style={{
+                  fontFamily: "Montserrat, sans-serif",
+                  userSelect: "none",
+                }}
               >
                 {/* BMC Title Header */}
                 <div
@@ -1107,6 +1187,24 @@ const DynamicBMCCanvas = () => {
     </div>
   );
 };
+
+// --- Unicode-safe base64 encode/decode ---
+function base64EncodeUnicode(str) {
+  return btoa(
+    encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function (match, p1) {
+      return String.fromCharCode("0x" + p1);
+    })
+  );
+}
+function base64DecodeUnicode(str) {
+  return decodeURIComponent(
+    Array.prototype.map
+      .call(atob(str), function (c) {
+        return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+      })
+      .join("")
+  );
+}
 
 function App() {
   return <DynamicBMCCanvas />;
