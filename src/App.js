@@ -53,14 +53,24 @@ const DynamicBMCCanvas = () => {
   // Listen for window resize to update mobile state
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth <= 768);
-      if (window.innerWidth > 768) {
-        setMobileMenuOpen(false); // Close mobile menu on desktop
+      const wasMobile = isMobile;
+      const nowMobile = window.innerWidth <= 768;
+      setIsMobile(nowMobile);
+
+      if (!wasMobile && nowMobile) {
+        // Switching to mobile - adjust transform for mobile viewing
+        setMobileMenuOpen(false);
+        // Set a mobile-friendly default transform
+        setTransform({ x: 20, y: 20, scale: 0.4 });
+      } else if (wasMobile && !nowMobile) {
+        // Switching to desktop - reset to desktop transform
+        setMobileMenuOpen(false);
+        setTransform({ x: 50, y: 50, scale: 0.8 });
       }
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, [isMobile]);
 
   // Toast notification system
   const showToastMessage = (message) => {
@@ -429,13 +439,23 @@ const DynamicBMCCanvas = () => {
           setBmcData(parsedData);
           setBmcTitle(title);
           setFileName(file.name);
-          setTransform({ x: 50, y: 50, scale: 0.8 });
+
+          // Set appropriate initial transform based on screen size
+          if (isMobile) {
+            setTransform({ x: 20, y: 20, scale: 0.4 });
+          } else {
+            setTransform({ x: 50, y: 50, scale: 0.8 });
+          }
+
           setMobileMenuOpen(false); // Close menu after upload
+          showToastMessage("📄 BMC file loaded successfully!");
         };
         reader.readAsText(file);
+      } else {
+        showToastMessage("❌ Please select a valid .md file");
       }
     },
-    [parseMarkdownToBMC]
+    [parseMarkdownToBMC, isMobile]
   );
 
   // Print BMC function
@@ -707,8 +727,8 @@ const DynamicBMCCanvas = () => {
     // Get actual BMC content size
     const bmcRect = bmcContent.getBoundingClientRect();
 
-    // Remove any scrollbars from calculation
-    const padding = 40;
+    // Adjust padding based on screen size
+    const padding = isMobile ? 20 : 40;
     const availableWidth = containerRect.width - padding * 2;
     const availableHeight = containerRect.height - padding * 2;
 
@@ -729,7 +749,11 @@ const DynamicBMCCanvas = () => {
   };
 
   const resetView = () => {
-    setTransform({ x: 50, y: 50, scale: 0.8 });
+    if (isMobile) {
+      setTransform({ x: 20, y: 20, scale: 0.4 });
+    } else {
+      setTransform({ x: 50, y: 50, scale: 0.8 });
+    }
   };
 
   // Event listeners
@@ -781,7 +805,13 @@ const DynamicBMCCanvas = () => {
         setBmcData(parsedData);
         setBmcTitle(title);
         setFileName(fileObj.filename || "Shared BMC");
-        setTransform({ x: 50, y: 50, scale: 0.8 });
+
+        // Set appropriate initial transform based on screen size
+        if (isMobile) {
+          setTransform({ x: 20, y: 20, scale: 0.4 });
+        } else {
+          setTransform({ x: 50, y: 50, scale: 0.8 });
+        }
 
         // Clean URL after loading data
         window.history.replaceState(
@@ -789,11 +819,12 @@ const DynamicBMCCanvas = () => {
           document.title,
           window.location.pathname
         );
+        showToastMessage("🔗 Shared BMC loaded successfully!");
       } catch (e) {
         // ignore if invalid
       }
     }
-  }, [parseMarkdownToBMC]);
+  }, [parseMarkdownToBMC, isMobile]);
 
   // --- Share button handler ---
   const handleShare = () => {
@@ -1135,6 +1166,17 @@ const DynamicBMCCanvas = () => {
                   >
                     Zoom: {Math.round(transform.scale * 100)}%
                   </span>
+                </div>
+
+                {/* Mobile File Picker Note */}
+                <div className="border-t border-gray-300 dark:border-gray-600 pt-3">
+                  <p
+                    className={`text-xs ${
+                      isDarkMode ? "text-gray-400" : "text-gray-500"
+                    } text-center`}
+                  >
+                    💡 Tap "Upload BMC File" to select files from your device
+                  </p>
                 </div>
               </div>
             </div>
