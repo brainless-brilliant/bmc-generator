@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/bmc-generator/static/css/main.b75a3bc5.css",
+    "main.js": "/bmc-generator/static/js/main.d2948917.js",
+    "index.html": "/bmc-generator/index.html",
+    "main.b75a3bc5.css.map": "/bmc-generator/static/css/main.b75a3bc5.css.map",
+    "main.d2948917.js.map": "/bmc-generator/static/js/main.d2948917.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.b75a3bc5.css",
+    "static/js/main.d2948917.js"
+  ]
+}
